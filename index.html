@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AIChat</title>
+    <meta name="color-scheme" content="light dark">
+    <link rel="manifest" href="manifest.json">
+    <script>
+        (function() {
+            fetch('manifest.json')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    const appName = data.short_name || data.name || document.title;
+                    document.title = appName;
+                    const titleMeta = document.createElement('meta');
+                    titleMeta.name = 'apple-mobile-web-app-title';
+                    titleMeta.content = appName;
+                    document.head.appendChild(titleMeta);
+                    // 动态检测 icon 文件，支持多种格式
+                    const iconFormats = ['icon.png', 'icon.PNG', 'icon.jpg', 'icon.JPG', 'icon.jpeg', 'icon.JPEG'];
+                    const findIcon = async () => {
+                        for (const iconFile of iconFormats) {
+                            try {
+                                const response = await fetch(iconFile, { method: 'HEAD' });
+                                if (response.ok) {
+                                    // 添加 apple-touch-icon（iOS设备）
+                                    const appleTouchIcon = document.createElement('link');
+                                    appleTouchIcon.rel = 'apple-touch-icon';
+                                    appleTouchIcon.href = iconFile;
+                                    document.head.appendChild(appleTouchIcon);
+                                    // 添加 favicon（桌面浏览器标签页图标）
+                                    const favicon = document.createElement('link');
+                                    favicon.rel = 'icon';
+                                    favicon.type = iconFile.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+                                    favicon.href = iconFile;
+                                    document.head.appendChild(favicon);
+                                    return;
+                                }
+                            } catch (e) {
+                                // 继续尝试下一个格式
+                            }
+                        }
+                    };
+                    findIcon();
+                })
+                .catch(error => console.error('Error loading manifest for iOS tags:', error));
+        })();
+    </script>
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f7f7">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111">
+    <script>
+        (function() {
+            const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = prefersDark ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
+    <link href="https://cdn.bootcdn.net/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdn.bootcdn.net/ajax/libs/cropperjs/1.5.13/cropper.min.js" defer></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
+    <script src="silent-audio.js" defer></script>
+    <script src="ringtone-elegent.js" defer></script>
+    <script src="ringtone-wechat.js" defer></script>
+    
+    <style>*,*::before,*::after{-webkit-tap-highlight-color:rgba(0,0,0,0)!important;tap-highlight-color:rgba(0,0,0,0)!important;}</style>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <div id="app-loader" style="position: fixed; top: 0; left: 0; width: 100%; height: 100vh; background-color: var(--bg-color); z-index: 9999; display: flex; justify-content: center; align-items: center;">
+        <style>
+            .spinner {
+                width: 50px;
+                height: 50px;
+                border: 5px solid var(--border-color);
+                border-top-color: var(--button-bg);
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+        </style>
+        <div class="spinner"></div>
+    </div>
+    <div id="app-container">
+        <header id="header">
+            <div class="header-buttons-left">
+                <button id="theme-toggle-btn" class="icon-btn">
+                    <svg class="back-arrow-icon" viewBox="0 0 24 24">
+                        <polyline points="15 18 9 12 15 6"></polyline>
+                    </svg>
+                </button>
+                <div id="notification-badge"></div>
+                <div id="back-arrow-menu">
+                    <button id="menu-proactive-msg" class="back-arrow-menu-item">主动消息</button>
+                    <button id="menu-moments" class="back-arrow-menu-item">朋友圈</button>
+                </div>
+            </div>
+            <div id="ai-name-display-wrapper">
+                <h1 id="ai-name-display">AI Chat</h1>
+            </div>
+            <div class="header-buttons-right">
+                <button id="settings-btn" class="icon-btn">☰</button>
+            </div>
+        </header>
+        <div id="chat-window"></div>
+        <div id="input-area">
+            <div id="image-preview-container">
+                <img id="image-preview-thumb" src="" alt="Image Preview">
+                <span id="remove-image-btn">×</span>
+            </div>
+            <div id="sticker-panel" style="display: none;"></div>
+            <form id="chat-form">
+                <button type="button" id="sticker-toggle-btn" class="icon-btn">
+                    <div class="custom-icon smiley-icon">
+                        <div class="eye left"></div>
+                        <div class="eye right"></div>
+                        <div class="mouth"></div>
+                    </div>
+                </button>
+                <button type="button" id="image-select-btn" class="icon-btn">
+                    <div class="custom-icon gallery-icon">
+                        <div class="sun"></div>
+                        <div class="mountain-svg">
+                            <svg width="28" height="28" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M -5 90 L 30 65 L 55 80 L 90 45 L 130 85" />
+                            </svg>
+                        </div>
+                    </div>
+                </button>
+                <textarea id="user-input" placeholder="" rows="1"></textarea>
+                <button type="button" id="send-btn" class="inactive">发送</button>
+            </form>
+        </div>
+    </div>
+    <input type="file" id="image-input" accept="image/*" style="display: none;">
+    <input type="file" id="import-file-input" accept=".json,.zip,application/json,application/zip" style="display: none;">
+    <input type="file" id="moments-display-pics-input" accept="image/*,image/heif,image/heic" multiple style="display: none;">
+    <input type="file" id="moments-bg-light-file-input" accept="image/*" style="display: none;">
+    <input type="file" id="moments-bg-dark-file-input" accept="image/*" style="display: none;">
+    <input type="file" id="import-sticker-zip-input" accept=".zip,application/zip" style="display: none;">
+    <input type="file" id="sticker-edit-local-input" accept="image/*" style="display: none;">
+    <div id="settings-panel" class="full-page-view">
+        <div class="page-header">
+            <div style="flex: 1;"></div>
+            <h2>设置</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="save-and-close-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div id="settings-form-content" class="page-content">
+            <div class="settings-menu-group">
+                <div id="user-profile-setting" class="settings-menu-item">
+                    <img id="user-avatar-preview" class="profile-avatar" src="" alt="User Avatar">
+                    <span id="user-name-display-settings">User</span>
+                </div>
+                <div id="ai-profile-setting" class="settings-menu-item">
+                    <img id="ai-avatar-preview" class="profile-avatar" src="" alt="AI Avatar">
+                    <div style="flex-grow: 1; margin-left: 15px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;">
+                        <span id="ai-name-display-settings">AI Chat</span>
+                        <span id="ai-nickname-display-settings" style="font-size: 14px; color: var(--time-divider-color);">备注名</span>
+                    </div>
+                </div>
+            </div>
+            <input type="file" id="user-avatar-input" accept="image/*" style="display: none;">
+            <input type="file" id="ai-avatar-input" accept="image/*" style="display: none;">
+            <input type="text" id="user-name-input" style="display: none;">
+            <input type="text" id="ai-name-input" style="display: none;">
+            <div class="settings-menu-group">
+                <div id="appearance-settings-btn" class="settings-menu-item sys-btn-simple">
+                    <span>聊天界面主题设置</span>
+                </div>
+                <div id="implicit-prompt-btn" class="settings-menu-item sys-btn-simple">
+                    <span>隐性后置提示词</span>
+                </div>
+                <div id="model-settings-btn" class="settings-menu-item sys-btn-simple">
+                    <span>模型设置</span>
+                </div>
+                <div id="sticker-settings-btn" class="settings-menu-item sys-btn-simple">
+                    <span>表情包设置</span>
+                </div>
+                <div id="system-prompt-btn" class="settings-menu-item sys-btn-simple">
+                    <span id="system-prompt-btn-label">Char - 人物设定</span>
+                </div>
+                <div id="proactive-prompt-btn" class="settings-menu-item sys-btn-simple">
+                    <span id="proactive-prompt-btn-label">Char - 主动消息</span>
+                </div>
+                <div id="schedule-btn" class="settings-menu-item sys-btn-simple">
+                    <span id="schedule-btn-label">Char - 日程设置</span>
+                </div>
+                <div id="memory-settings-btn" class="settings-menu-item sys-btn-simple">
+                    <span id="memory-settings-btn-label">Char - 记忆设置</span>
+                </div>
+                <div id="user-info-summary-btn" class="settings-menu-item sys-btn-simple">
+                    <span id="user-info-summary-btn-label">User - 信息汇总</span>
+                </div>
+                <div id="more-settings-btn" class="settings-menu-item sys-btn-simple">
+                    <span>更多</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="system-prompt-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex: 1;"></div>
+            <h2>人物设定</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="save-and-close-system-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="system-prompt-textarea" placeholder="例如: 你是一个乐于助人的AI助手。"></textarea>
+        </div>
+    </div>
+    <div id="appearance-settings-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>主题设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-appearance-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="settings-section-header">
+                <h3>主题预设</h3>
+                <button id="add-theme-btn" class="save-btn">新增主题</button>
+            </div>
+            <div id="theme-presets-list" style="margin-bottom: 20px;"></div>
+            <div class="settings-menu-group">
+                <div class="setting-row" style="padding: 4px 0;">
+                    <label for="notification-ringtone-select">通知铃声</label>
+                    <select id="notification-ringtone-select" class="sys-number-input" style="width: auto; min-width: 80px; text-align-last: center;">
+                        <option value="none">无</option>
+                        <option value="WeChat" selected>WeChat</option>
+                        <option value="elegent">elegent</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label for="chat-font-size-input">聊天字号 (px)</label>
+                    <input type="number" id="chat-font-size-input" class="sys-number-input" placeholder="17">
+                </div>
+                <div class="setting-row">
+                    <label for="history-rounds-input">保留聊天记录轮数</label>
+                    <input type="number" id="history-rounds-input" class="sys-number-input" placeholder="100">
+                </div>
+                <div class="setting-row">
+                    <label for="typing-speed-input">气泡发送间隔 (秒)</label>
+                    <input type="number" id="typing-speed-input" class="sys-number-input" placeholder="3">
+                </div>
+                <div class="setting-row">
+                    <label for="avatar-radius-input">头像圆弧度 (px)</label>
+                    <input type="number" id="avatar-radius-input" class="sys-number-input" placeholder="50" min="0" max="100">
+                </div>
+                <div class="setting-row">
+                    <label for="bubble-radius-input">气泡圆弧度 (px)</label>
+                    <input type="number" id="bubble-radius-input" class="sys-number-input" placeholder="19" min="0" max="50">
+                </div>
+                <div class="setting-row">
+                    <label for="bubble-width-input">气泡宽度微调 (px)</label>
+                    <input type="number" id="bubble-width-input" class="sys-number-input" placeholder="18">
+                </div>
+                <div class="setting-row">
+                    <label for="bubble-vertical-padding-input">气泡上下内边距微调 (px)</label>
+                    <input type="number" id="bubble-vertical-padding-input" class="sys-number-input" placeholder="8">
+                </div>
+                <div class="setting-row">
+                    <label for="frosted-glass-opacity-input">毛玻璃透明度 (0-1)</label>
+                    <input type="number" id="frosted-glass-opacity-input" class="sys-number-input" placeholder="0.85" step="0.05" min="0" max="1">
+                </div>
+                <div class="setting-row">
+                    <label for="frosted-glass-blur-input">毛玻璃模糊度 (px)</label>
+                    <input type="number" id="frosted-glass-blur-input" class="sys-number-input" placeholder="20" min="0">
+                </div>
+                <div class="setting-row">
+                    <label for="chat-window-bottom-padding-input">聊天记录底部缓冲距离 (px)</label>
+                    <input type="number" id="chat-window-bottom-padding-input" class="sys-number-input" placeholder="10" min="0">
+                </div>
+                <div class="setting-row">
+                    <label for="chat-input-bottom-padding-input">聊天界面输入栏底部距离 (px)</label>
+                    <input type="number" id="chat-input-bottom-padding-input" class="sys-number-input" placeholder="7" min="0">
+                </div>
+                <div class="setting-row">
+                    <label>屏幕最大宽高比例</label>
+                    <div class="proactive-time-inputs">
+                        <input type="number" id="screen-aspect-width-input" class="sys-number-input" placeholder="1" min="1">
+                        <span>:</span>
+                        <input type="number" id="screen-aspect-height-input" class="sys-number-input" placeholder="1" min="1">
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <label for="enter-send-message-toggle">Enter键发送消息</label>
+                    <label class="switch">
+                        <input type="checkbox" id="enter-send-message-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="split-bubble-on-newline-ai-toggle">换行符分割气泡 (AI)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="split-bubble-on-newline-ai-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="split-bubble-on-newline-user-toggle">换行符分割气泡 (用户)</label>
+                    <label class="switch">
+                        <input type="checkbox" id="split-bubble-on-newline-user-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-ai-avatar">开启AI头像</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-ai-avatar">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-user-avatar">开启用户头像</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-user-avatar">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-bubble-tails">开启气泡小尾巴</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-bubble-tails">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-avatar-position">头像在气泡下方</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-avatar-position">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-timestamp-background">开启时间戳背景</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-timestamp-background">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-silent-audio-keep-alive">静音音频保活</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-silent-audio-keep-alive">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-player-name-on-top">静音播放器角色名称在上方</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-player-name-on-top">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="toggle-double-click-input">双击聊天界面空白处弹出输入法</label>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-double-click-input">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <h3>聊天器主题颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>浅色模式颜色</span>
+                    <div class="color-preview" data-key="appearance_bg_color_light"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>深色模式颜色</span>
+                    <div class="color-preview" data-key="appearance_bg_color_dark"></div>
+                </div>
+            </div>
+            <h3>聊天背景设置</h3>
+            <div class="settings-menu-group">
+                <div id="chat-bg-light-btn" class="settings-menu-item sys-btn-simple">
+                    <span>浅色背景设置</span>
+                </div>
+                <div id="chat-bg-dark-btn" class="settings-menu-item sys-btn-simple">
+                    <span>深色背景设置</span>
+                </div>
+                <div id="chat-bg-clear-btn" class="settings-menu-item sys-btn-simple">
+                    <span>清空聊天背景</span>
+                </div>
+            </div>
+            <input type="file" id="chat-bg-light-input" accept="image/*,image/heif,image/heic,.heif,.heic" style="display: none;">
+            <input type="file" id="chat-bg-dark-input" accept="image/*,image/heif,image/heic,.heif,.heic" style="display: none;">
+            <h3>气泡颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>AI气泡 (浅色模式)</span>
+                    <div class="color-preview" data-key="appearance_ai_bubble_light"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>AI气泡 (深色模式)</span>
+                    <div class="color-preview" data-key="appearance_ai_bubble_dark"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>用户气泡 (浅色模式)</span>
+                    <div class="color-preview" data-key="appearance_user_bubble_light"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>用户气泡 (深色模式)</span>
+                    <div class="color-preview" data-key="appearance_user_bubble_dark"></div>
+                </div>
+            </div>
+            <h3>文本颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>AI文本 (浅色模式)</span>
+                    <div class="color-preview" data-key="appearance_ai_text_light"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>AI文本 (深色模式)</span>
+                    <div class="color-preview" data-key="appearance_ai_text_dark"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>用户文本 (浅色模式)</span>
+                    <div class="color-preview" data-key="appearance_user_text_light"></div>
+                </div>
+                <div class="settings-menu-item sys-btn-simple appearance-setting-item">
+                    <span>用户文本 (深色模式)</span>
+                    <div class="color-preview" data-key="appearance_user_text_dark"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="theme-editor-page" class="full-page-view" style="z-index: 1030;">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="theme-editor-cancel-btn" class="action-btn">取消</button>
+            </div>
+            <h2 id="theme-editor-title">新增主题</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="theme-editor-save-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <input type="hidden" id="theme-editor-id">
+            <div class="setting-row">
+                <label for="theme-name-input">主题名称</label>
+                <input type="text" id="theme-name-input" class="sys-number-input" style="width: 150px; text-align: left; padding-left: 8px;" placeholder="例如: 护眼模式">
+            </div>
+            <h3>基础设置</h3>
+            <div class="settings-menu-group">
+                <div class="setting-row">
+                    <label for="theme-chat-font-size-input">聊天字号 (px)</label>
+                    <input type="number" id="theme-chat-font-size-input" class="sys-number-input" placeholder="17">
+                </div>
+                <div class="setting-row">
+                    <label for="theme-avatar-radius-input">头像圆弧度 (px)</label>
+                    <input type="number" id="theme-avatar-radius-input" class="sys-number-input" placeholder="50" min="0" max="100">
+                </div>
+                <div class="setting-row">
+                    <label for="theme-bubble-radius-input">气泡圆弧度 (px)</label>
+                    <input type="number" id="theme-bubble-radius-input" class="sys-number-input" placeholder="19" min="0" max="50">
+                </div>
+                <div class="setting-row">
+                    <label for="theme-bubble-width-input">气泡宽度微调 (px)</label>
+                    <input type="number" id="theme-bubble-width-input" class="sys-number-input" placeholder="18">
+                </div>
+                <div class="setting-row">
+                    <label for="theme-bubble-vertical-padding-input">气泡上下内边距微调 (px)</label>
+                    <input type="number" id="theme-bubble-vertical-padding-input" class="sys-number-input" placeholder="8">
+                </div>
+                <div class="setting-row">
+                    <label for="theme-ai-avatar-toggle">开启AI头像</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-ai-avatar-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="theme-user-avatar-toggle">开启用户头像</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-user-avatar-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="theme-bubble-tails-toggle">开启气泡小尾巴</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-bubble-tails-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="theme-avatar-position-toggle">头像在气泡下方</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-avatar-position-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="theme-timestamp-background-toggle">开启时间戳背景</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-timestamp-background-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row">
+                    <label for="theme-wallpaper-toggle">开启壁纸</label>
+                    <label class="switch">
+                        <input type="checkbox" id="theme-wallpaper-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+            <h3>聊天器主题颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item theme-color-item">
+                    <span>浅色模式颜色</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_bg_color_light"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>深色模式颜色</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_bg_color_dark"></div>
+                </div>
+            </div>
+            <h3>气泡颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item theme-color-item">
+                    <span>AI气泡 (浅色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_ai_bubble_light"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>AI气泡 (深色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_ai_bubble_dark"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>用户气泡 (浅色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_user_bubble_light"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>用户气泡 (深色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_user_bubble_dark"></div>
+                </div>
+            </div>
+            <h3>文本颜色</h3>
+            <div class="settings-menu-group">
+                <div class="settings-menu-item theme-color-item">
+                    <span>AI文本 (浅色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_ai_text_light"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>AI文本 (深色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_ai_text_dark"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>用户文本 (浅色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_user_text_light"></div>
+                </div>
+                <div class="settings-menu-item theme-color-item">
+                    <span>用户文本 (深色模式)</span>
+                    <div class="color-preview theme-editor-preview" data-key="appearance_user_text_dark"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="sticker-settings-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>表情包设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-sticker-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div id="sticker-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span>表情包判断提示词</span>
+            </div>
+            <div class="setting-row">
+                <label for="sticker-frequency-input">表情包发送频率 (%)</label>
+                <input type="number" id="sticker-frequency-input" class="sys-number-input" placeholder="0" min="0" max="100">
+            </div>
+            <div class="setting-row">
+                <label for="sticker-size-input">表情包大小 (px)</label>
+                <input type="number" id="sticker-size-input" class="sys-number-input" placeholder="100" min="10">
+            </div>
+            <div class="setting-row">
+                <label for="sticker-timeout-input">表情包判断超时 (秒)</label>
+                <input type="number" id="sticker-timeout-input" class="sys-number-input" placeholder="30" min="1">
+            </div>
+            <div class="sticker-mapping-header">
+                <h3>表情包名称-描述-链接</h3>
+                <button id="add-sticker-mapping-btn" class="save-btn">新增</button>
+            </div>
+            <div class="settings-menu-group" style="margin-top: 15px; margin-bottom: 15px;">
+                <div id="export-sticker-config-btn" class="settings-menu-item sys-btn-simple"><span>导出表情包配置</span></div>
+                <div id="import-sticker-config-btn" class="settings-menu-item sys-btn-simple"><span>导入表情包配置</span></div>
+                <div id="sticker-ratio-btn" class="settings-menu-item sys-btn-simple"><span>横向表情包适配</span></div>
+                <div id="delete-stickers-btn" class="settings-menu-item sys-btn-simple"><span>删除表情包</span></div>
+                <div id="sticker-delete-actions" class="sys-dialog-buttons" style="display: none; margin: 0; gap: 10px;">
+                    <button type="button" id="confirm-sticker-delete-btn" class="sys-dialog-btn sys-btn-confirm-delete" style="background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">确认删除</button>
+                    <button type="button" id="cancel-sticker-delete-btn" class="sys-dialog-btn sys-btn-cancel" style="background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">取消</button>
+                </div>
+            </div>
+            <div id="sticker-mapping-container" class="sticker-grid-container"></div>
+        </div>
+    </div>
+    <div id="sticker-ratio-settings-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>横向表情包适配</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-sticker-ratio-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <p style="font-size: 14px; color: var(--time-divider-color); margin-top: 0; line-height: 1.5;">
+                作用：系统渲染表情包的显示容器为正方形区域，此操作可以缩短宽度＞高度（横向）表情包的上下间距，让聊天界面看起来更加紧凑。宽度＜高度（竖向）的表情包无需适配。<br><br>
+                方法：输入该表情包的原始尺寸（如240*200，此数据可以从相册中看到），系统将自动计算并适配其在聊天中的“显示高度”，以获得更好的视觉效果。此项为可选项，留空则按正方形显示。<br><br>
+                进阶：如果想要某个表情包变小，也可以通过调整宽高比来调整该表情包的显示大小。假设你设置的默认表情包大小为120px，但你想要某个表情包显示成80px的大小，你就可以将此表情包的宽高比例设置成3:2，系统就能自动计算出该表情包的正方形显示容器为120*2/3=80px了。此操作对任意样式的表情包都生效～
+            </p>
+            <div id="sticker-ratio-container"></div>
+        </div>
+    </div>
+    <div id="sticker-prompt-page" class="full-page-view" style="z-index: 1030;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>表情包判断提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-sticker-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="sticker-prompt-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="schedule-page" class="full-page-view">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="manual-fetch-schedule-btn" class="action-btn">获取日程</button>
+            </div>
+            <h2 id="schedule-page-title">日程设置</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="save-and-close-schedule-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <h3 style="margin-bottom: -5px;">日程联网查询设置</h3>
+            <div class="setting-row" style="padding: 10px 0; margin-bottom: -5px;">
+                <label for="web-search-enabled-toggle">开启日程联网查询</label>
+                <label class="switch">
+                    <input type="checkbox" id="web-search-enabled-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="web-search-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span>日程联网查询提示词</span>
+            </div>
+            <div id="web-search-result-btn" class="settings-menu-item sys-btn-simple">
+                <span>日程联网查询结果</span>
+            </div>
+            <h3 style="margin-bottom: -5px;">日程设置</h3>
+            <div class="setting-row" style="padding: 10px 0; margin-bottom: -5px;">
+                <label for="schedule-enabled-toggle">开启日程</label>
+                <label class="switch">
+                    <input type="checkbox" id="schedule-enabled-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="schedule-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span id="schedule-prompt-label">日程生成提示词</span>
+            </div>
+            <div id="todays-schedule-view-btn" class="settings-menu-item sys-btn-simple">
+                <span id="todays-schedule-label">今天的日程内容</span>
+            </div>
+            <div id="yesterdays-schedule-view-btn" class="settings-menu-item sys-btn-simple">
+                <span id="yesterdays-schedule-label">昨天的日程内容</span>
+            </div>
+            <div id="day-before-schedule-view-btn" class="settings-menu-item sys-btn-simple">
+                <span id="day-before-schedule-label">前天的日程内容</span>
+            </div>
+        </div>
+    </div>
+    <div id="web-search-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>联网查询提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-web-search-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="web-search-prompt-page-textarea" placeholder="例如：请联网查询今天的日期、节日、天气、以及三条热门新闻，并以简洁的格式返回。"></textarea>
+        </div>
+    </div>
+    <div id="web-search-result-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="cancel-web-search-result-btn" class="action-btn">取消</button>
+            </div>
+            <h2>日程联网查询结果</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-web-search-result-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="web-search-result-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="schedule-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="schedule-prompt-page-title">日程生成提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-schedule-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="schedule-prompt-page-textarea" placeholder="例如：请你扮演xxx，根据联网查询信息以及昨天和前天的日程（如有），为今天安排一个符合人设、有趣且合理的日程表。"></textarea>
+        </div>
+    </div>
+    <div id="todays-schedule-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="todays-schedule-page-title">日程设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-todays-schedule-btn" class="save-btn">完成</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="todays-schedule-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="summary-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>总结提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-summary-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="summary-prompt-textarea" placeholder="例如: 请根据以下对话，以第一人称（'我'）的视角，简洁地总结出关键信息、决策或情感变化。"></textarea>
+        </div>
+    </div>
+    <div id="proactive-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>主动消息提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-proactive-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="proactive-prompt-textarea" placeholder="例如：你现在可以主动发起一个有趣的话题。"></textarea>
+        </div>
+    </div>
+    <div id="export-settings-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>导出全部数据（备份）</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button class="close-btn" data-target="export-settings-page">×</button>
+            </div>
+        </div>
+        <div class="page-content" style="padding: 20px;">
+            <p style="font-size: 15px; color: var(--text-color); line-height: 1.6; margin-top: 0;">
+                该项为网页数据备份，备份所有的网页本地数据。<br>
+                每次更新网页版本/清空网页数据前，最好备份一次。<br>
+                绝大多数用户可以直接导出json格式的备份文件，此文件命名为“AI名称-日期-时间.json”。
+            </p>
+            <button id="export-file-btn" class="settings-menu-item" style="justify-content: center; width: 100%; background-color: transparent; color: var(--text-color); font-size: 16px; font-family: inherit; font-weight: normal; margin-bottom: 20px;">
+                导出备份文件
+            </button>
+            <p style="font-size: 15px; color: var(--text-color); line-height: 1.6;">
+                部分用户因为各种原因无法导出json文件，请选择以下备选方案。
+            </p>
+            <button id="export-clipboard-btn" class="settings-menu-item" style="justify-content: center; width: 100%; background-color: transparent; color: var(--text-color); font-size: 16px; font-family: inherit; font-weight: normal;">
+                将全部网页数据复制到剪切板
+            </button>
+        </div>
+    </div>
+    <div id="import-settings-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>导入全部数据（恢复）</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button class="close-btn" data-target="import-settings-page">×</button>
+            </div>
+        </div>
+        <div class="page-content" style="padding: 20px;">
+            <p style="font-size: 15px; color: var(--text-color); line-height: 1.6; margin-top: 0;">
+                该项为网页数据恢复，从本地导入数据并覆盖当前所有的本地数据。<br>
+                绝大多数用户可以直接导入json格式的备份文件，此文件命名为“AI名称-日期-时间.json”。
+            </p>
+            <button id="import-select-file-btn" class="settings-menu-item" style="justify-content: center; width: 100%; background-color: transparent; color: var(--text-color); font-size: 16px; font-family: inherit; font-weight: normal; margin-bottom: 20px;">
+                选择备份文件
+            </button>
+            <p style="font-size: 15px; color: var(--text-color); line-height: 1.6;">
+                部分用户因为各种原因无法导入json文件，请选择以下备选方案。
+            </p>
+            <button id="import-clipboard-btn" class="settings-menu-item" style="justify-content: center; width: 100%; background-color: transparent; color: var(--text-color); font-size: 16px; font-family: inherit; font-weight: normal;">
+                导入剪切板内容
+            </button>
+        </div>
+    </div>
+    <div id="import-sticker-config-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div class="header-actions" style="flex:1; justify-content: flex-start;">
+                <button id="close-sticker-import-page-btn" class="close-btn">×</button>
+            </div>
+            <h2>导入表情包配置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-sticker-import-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="settings-menu-group" style="margin-bottom: 20px;">
+                <div id="import-local-sticker-btn" class="settings-menu-item sys-btn-simple">
+                    <span>导入本地表情包 (ZIP)</span>
+                </div>
+            </div>
+            <h3 style="margin-top: 0; margin-bottom: 10px;">或粘贴 JSON 配置</h3>
+            <textarea id="import-sticker-config-textarea" placeholder="请在此处粘贴导出的表情包配置文本"></textarea>
+        </div>
+    </div>
+    <div id="memory-settings-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="memory-settings-title">记忆设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-memory-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div id="edit-summary-prompt-btn" class="settings-menu-item sys-btn-simple"><span>总结提示词</span></div>
+            <div id="view-pending-summary-btn" class="settings-menu-item sys-btn-simple">
+                <span>待总结的聊天内容</span>
+                <span id="pending-summary-stats">0 / 10</span>
+            </div>
+            <div class="setting-row">
+                <label for="context-rounds-input">短期记忆轮数</label>
+                <input type="number" id="context-rounds-input" class="sys-number-input" placeholder="15">
+            </div>
+            <div class="setting-row">
+                <label for="summarization-rounds-input">总结触发轮数</label>
+                <input type="number" id="summarization-rounds-input" class="sys-number-input" placeholder="10">
+            </div>
+            <div class="setting-row">
+                <label for="long-term-memory-capacity-input">记忆片段容量</label>
+                <input type="number" id="long-term-memory-capacity-input" class="sys-number-input" placeholder="50">
+            </div>
+            <div class="setting-row">
+                <label for="recent-memories-count-input">最近记忆片段数量</label>
+                <input type="number" id="recent-memories-count-input" class="sys-number-input" placeholder="3">
+            </div>
+            <h3 id="memory-management-header">记忆片段管理 (0 / 50)</h3>
+            <div class="settings-menu-group">
+                <div id="copy-all-memories-btn" class="settings-menu-item sys-btn-simple"><span>复制所有记忆片段</span></div>
+                <div id="add-memory-btn" class="settings-menu-item sys-btn-simple"><span>添加记忆片段</span></div>
+                <div id="deduplicate-memories-btn" class="settings-menu-item sys-btn-simple"><span>一键清除重复记忆片段</span></div>
+                <div id="batch-delete-memories-btn" class="settings-menu-item sys-btn-simple"><span>批量删除记忆片段</span></div>
+                <div id="batch-delete-actions">
+                    <button type="button" id="confirm-batch-delete-btn" class="settings-menu-item" style="background-color: #c93c3c; color: white; justify-content: center;">确认删除已选</button>
+                    <button type="button" id="cancel-batch-delete-btn" class="settings-menu-item" style="background-color: #555; color: white; justify-content: center;">取消</button>
+                </div>
+            </div>
+            <div id="memory-items-container"></div>
+        </div>
+    </div>
+    <div id="pending-summary-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex: 1;"></div>
+            <h2>待总结的聊天内容</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="pending-summary-page-save-btn" class="save-btn">完成</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="pending-summary-page-textarea" readonly placeholder="暂无待总结内容"></textarea>
+        </div>
+    </div>
+    <div id="user-info-summary-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="user-info-summary-page-title">用户信息汇总</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-user-info-summary-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div id="user-basic-info-btn" class="settings-menu-item sys-btn-simple">
+                <span id="user-basic-info-btn-label">User - 基础信息</span>
+            </div>
+            <h3 id="user-realtime-info-header">User - 实时信息</h3>
+            <div id="user-info-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span>实时信息收集提示词</span>
+            </div>
+            <div id="view-user-info-pending-summary-btn" class="settings-menu-item sys-btn-simple">
+                <span>待总结的聊天内容</span>
+                <span id="user-info-pending-summary-stats">0 / 10</span>
+            </div>
+            <div class="setting-row">
+                <label for="user-info-collection-rounds-input">实时信息收集轮数</label>
+                <input type="number" id="user-info-collection-rounds-input" class="sys-number-input" placeholder="10">
+            </div>
+            <h3 id="user-info-management-header">实时信息收集情况 (0 / 100)</h3>
+            <div class="setting-row">
+                <label for="user-info-capacity-input">实时信息收集容量</label>
+                <input type="number" id="user-info-capacity-input" class="sys-number-input" placeholder="100">
+            </div>
+            <div id="copy-all-user-info-btn" class="settings-menu-item sys-btn-simple" style="justify-content: center; margin-top: 15px;">一键复制所有用户信息</div>
+            <div id="user-info-items-container"></div>
+        </div>
+    </div>
+    <div id="user-info-pending-summary-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex: 1;"></div>
+            <h2>待总结的聊天内容</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="user-info-pending-summary-page-save-btn" class="save-btn">完成</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="user-info-pending-summary-page-textarea" readonly placeholder="暂无待总结内容"></textarea>
+        </div>
+    </div>
+    <div id="user-basic-info-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="user-basic-info-page-title">User - 基础信息</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-user-basic-info-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="user-basic-info-textarea" placeholder="输入用户的核心、静态信息，例如：&#10;# 用户信息&#10;- 我叫小明，是一个程序员。&#10;- 我住在北京。"></textarea>
+        </div>
+    </div>
+    <div id="user-info-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>实时信息收集提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-user-info-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="user-info-prompt-textarea" placeholder="例如：请根据以下对话，以第三人称（'他/她'）的视角，提取并总结出关于用户（User）的关键信息点。每条信息另起一行，并以'- '开头。"></textarea>
+        </div>
+    </div>
+    <div id="model-management-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>模型设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-model-management-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="settings-section-header">
+                <h3>模型配置</h3>
+                <button id="add-api-config-btn" class="save-btn">添加模型</button>
+            </div>
+            <div id="api-configs-list"></div>
+            <div class="settings-section-header">
+                <h3>聊天模型</h3>
+                <button id="chat-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="chat-model-section">
+                <div id="chat-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="chat-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择聊天模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>表情包判断模型</h3>
+                <button id="sticker-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="sticker-model-section">
+                <div id="sticker-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="sticker-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择表情包判断模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>图片识别模型</h3>
+                <button id="vision-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="vision-model-section">
+                <div id="vision-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="vision-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择图片识别模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>联网查询模型</h3>
+                <button id="web-search-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="web-search-model-section">
+                <div id="web-search-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="web-search-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择联网查询模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>日程生成模型</h3>
+                <button id="schedule-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="schedule-model-section">
+                <div id="schedule-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="schedule-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择日程生成模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>记忆片段总结模型</h3>
+                <button id="memory-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="memory-model-section">
+                <div id="memory-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="memory-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择记忆片段总结模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>用户信息总结模型</h3>
+                <button id="user-info-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="user-info-model-section">
+                <div id="user-info-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="user-info-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择用户信息总结模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>朋友圈生成模型</h3>
+                <button id="moments-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="moments-model-section">
+                <div id="moments-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="moments-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择朋友圈生成模型</span>
+                </div>
+            </div>
+            <div class="settings-section-header">
+                <h3>个性签名生成模型</h3>
+                <button id="signature-model-config-btn" class="save-btn">配置</button>
+            </div>
+            <div id="signature-model-section">
+                <div id="signature-model-select-btn" class="settings-menu-item sys-btn-simple" style="cursor: pointer;">
+                    <span id="signature-model-display-name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">点击选择个性签名生成模型</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="api-config-editor-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="api-config-editor-cancel-btn" class="action-btn">取消</button>
+            </div>
+            <h2 id="api-config-editor-title">新增模型</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="api-config-editor-save-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <input type="hidden" id="api-config-editor-id">
+            <label for="api-config-name-input">API 分组</label>
+            <input type="text" id="api-config-name-input" class="dialog-box-input" placeholder="例如：OpenAI">
+            <label for="api-config-url-input">API 地址</label>
+            <input type="url" id="api-config-url-input" class="dialog-box-input" placeholder="注意：地址后面需要加“/v1”">
+            <label for="api-config-path-input">API 路径</label>
+            <input type="text" id="api-config-path-input" class="dialog-box-input" placeholder="/chat/completions">
+            <label for="api-config-key-input">API 密钥</label>
+            <input type="text" id="api-config-key-input" class="dialog-box-input" placeholder="sk-...">
+            <div class="settings-section-header" style="margin-top: 20px;">
+                <h3>模型列表</h3>
+                <button id="fetch-api-config-models-btn" class="save-btn">获取模型</button>
+            </div>
+            <div id="api-config-models-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
+    </div>
+    <div id="more-settings-page" class="full-page-view">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>更多</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="close-more-settings-btn" class="save-btn">返回</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="settings-menu-group">
+                <div class="setting-row" style="padding: 12px 15px;">
+                    <label for="cloud-sync-skip-images-toggle">云同步时跳过所有本地图片</label>
+                    <label class="switch">
+                        <input type="checkbox" id="cloud-sync-skip-images-toggle">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div id="upload-to-cloud-btn" class="settings-menu-item sys-btn-simple">
+                    <span>本地数据上传到云端</span>
+                    <span id="last-upload-time-display" style="color: var(--time-divider-color); font-size: 14px; margin-left: auto; padding-left: 10px;"></span>
+                </div>
+                <div id="download-from-cloud-btn" class="settings-menu-item sys-btn-simple"><span>云端数据下载到本地</span></div>
+                <div id="export-shared-config-btn" class="settings-menu-item sys-btn-simple"><span>导出共性配置项 (主题 + 模型)</span></div>
+                <div id="import-shared-config-btn" class="settings-menu-item sys-btn-simple"><span>导入共性配置项 (主题 + 模型)</span></div>
+                <div id="export-settings-btn" class="settings-menu-item sys-btn-simple"><span>导出全部数据（备份）</span></div>
+                <div id="import-settings-btn" class="settings-menu-item sys-btn-simple"><span>导入全部数据（恢复）</span></div>
+                <div id="clear-context-btn" class="settings-menu-item sys-btn-simple"><span>清空聊天界面 + 上下文记忆</span></div>
+                <div id="check-storage-btn" class="settings-menu-item sys-btn-simple"><span>查看存储容量</span></div>
+                <div id="console-log-btn" class="settings-menu-item sys-btn-simple"><span>控制台日志</span></div>
+                <div id="storage-persistence-btn" class="settings-menu-item sys-btn-simple"><span>申请浏览器数据持久化存储</span></div>
+                <div id="format-btn" class="settings-menu-item sys-btn-simple"><span>😈重置本地数据😈</span></div>
+            </div>
+            <div style="margin-top: 25px; margin-bottom: 20px; text-align: center; font-size: 11px; color: var(--time-divider-color); line-height: 1.8;">
+                <div>✨ 豆泥聊天器 ✨</div>
+                <div>作者：QQ 3773477601</div>
+                <div>     小红书 1959090324</div>
+                <div>版本：2026.5.25</div>
+                <div>使用手册：<span id="copy-instruction-link" style="color: var(--button-bg); cursor: pointer;">点击复制网址</span></div>
+            </div>
+        </div>
+    </div>
+    <div id="console-log-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="copy-console-log-btn" class="action-btn">复制日志</button>
+            </div>
+            <h2>控制台日志</h2>
+            <div class="header-actions" style="flex: 1; justify-content: flex-end;">
+                <button id="close-console-log-btn" class="save-btn">取消</button>
+            </div>
+        </div>
+        <div id="console-log-container" class="page-content console-log-content"></div>
+    </div>
+    <div id="confirm-dialog" class="sys-dialog-overlay">
+        <div class="sys-dialog-box" style="max-width: 300px;">
+            <div id="confirm-message" style="margin: 0; text-align: center; font-size: 17px; line-height: 1.5; color: var(--text-color); display: flex; flex-direction: column; align-items: center;">确定要清空所有聊天记录吗？此操作不可撤销</div>
+            <div class="sys-dialog-buttons">
+                <button id="confirm-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="confirm-ok-btn" class="sys-dialog-btn sys-btn-confirm-delete">确定</button>
+            </div>
+        </div>
+    </div>
+    <div id="format-confirm-dialog" class="sys-dialog-overlay">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">重置本地数据确认</h2>
+            <p style="text-align: left; font-size: 15px; line-height: 1.5; margin-bottom: 10px; color: var(--text-color);">
+                1. 此操作将<b>清空本地的全部数据和缓存</b>，相当于格式化网页全部数据，直接将网页重置为初始状态。<br>
+                2. 此操作通常用于重置表情包或网页图片的缓存，解决图片加载失败的问题。<br>
+                3. 在执行“重置本地数据”之前，<b>务必将当前的全部本地数据上传到云端，或将本地数据全部导出</b>，以免造成数据丢失。<br><br>
+                请输入“<strong style="color: #c93c3c;">我确定重置本地数据</strong>”以继续。
+            </p>
+            <input type="text" id="format-confirm-input" class="sys-dialog-input" placeholder="在此输入确认文字">
+            <div class="sys-dialog-buttons">
+                <button id="format-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="format-confirm-btn" class="sys-dialog-btn sys-btn-confirm-delete">确认重置</button>
+            </div>
+        </div>
+    </div>
+    <div id="storage-usage-dialog" class="sys-dialog-overlay" style="z-index: 1100;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">查看存储容量</h2>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin: 10px 0;">
+                <div style="text-align: left; font-size: 15px; color: var(--text-color); font-weight: 500; margin-bottom: 5px;">LocalStorage (LS)</div>
+                <div style="text-align: center; font-weight: bold; font-size: 17px; color: var(--text-color);">
+                    已使用：<span id="storage-used-display">计算中...</span>
+                </div>
+                <div style="text-align: center; font-weight: bold; font-size: 17px; color: var(--text-color);">
+                    剩余容量：<span id="storage-remaining-display">计算中...</span>
+                </div>
+                <div style="text-align: left; font-size: 15px; color: var(--text-color); font-weight: 500; margin-top: 15px; margin-bottom: 5px;">IndexedDB (IDB)</div>
+                <div style="text-align: center; font-weight: bold; font-size: 17px; color: var(--text-color);">
+                    已使用：<span id="storage-idb-used-display">计算中...</span>
+                </div>
+                <div style="text-align: left; font-size: 14px; color: var(--time-divider-color); line-height: 1.5; margin-top: 15px;">
+                    说明：LocalStorage 最大存储容量为 5MB，IndexedDB 容量通常更大（取决于浏览器和设备）。显示的数据量可能比导出的 JSON 文件小，因为导出文件包含格式字符和结构信息。
+                </div>
+            </div>
+            <div class="sys-dialog-buttons">
+                <button id="storage-usage-ok-btn" class="sys-dialog-btn sys-btn-save">知道了</button>
+            </div>
+        </div>
+    </div>
+    <div id="action-dialog" class="dialog-overlay">
+        <div class="dialog-box">
+            <div id="action-buttons-container"></div>
+        </div>
+    </div>
+    <div id="edit-dialog" class="sys-dialog-overlay">
+        <div class="sys-dialog-box">
+            <h2 id="edit-dialog-title" class="sys-dialog-title">编辑消息</h2>
+            <textarea id="edit-textarea" class="sys-dialog-textarea"></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+                <button id="edit-delete-btn" class="sys-dialog-btn sys-btn-delete">删除</button>
+                <button id="edit-save-and-send-btn" class="sys-dialog-btn sys-btn-save-send">发送</button>
+            </div>
+        </div>
+    </div>
+    <div id="memory-edit-dialog" class="sys-dialog-overlay" style="z-index: 1030;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">编辑记忆片段</h2>
+            <textarea id="memory-edit-textarea" class="sys-dialog-textarea"></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="memory-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="memory-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="user-info-edit-dialog" class="sys-dialog-overlay" style="z-index: 1030;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">编辑用户信息</h2>
+            <textarea id="user-info-edit-textarea" class="sys-dialog-textarea"></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="user-info-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="user-info-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="add-memory-dialog" class="sys-dialog-overlay" style="z-index: 1030;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">添加记忆片段</h2>
+            <textarea id="add-memory-textarea" class="sys-dialog-textarea" placeholder="可一次性粘贴多条记忆，请使用 '---' (三个短横线) 作为分隔符。例如：&#10;[2024-01-01 周一 12:00]&#10;记忆内容1...&#10;---&#10;[2024-01-02 周二 13:00]&#10;记忆内容2..."></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="add-memory-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="add-memory-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="text-edit-dialog" class="sys-dialog-overlay">
+        <div class="sys-dialog-box">
+            <h2 id="text-edit-title" class="sys-dialog-title">编辑</h2>
+            <input type="text" id="text-edit-input" class="sys-dialog-input">
+            <div class="sys-dialog-buttons">
+                <button id="text-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="text-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="sticker-edit-dialog" class="sys-dialog-overlay" style="z-index: 1030;">
+        <div class="sys-dialog-box">
+            <h2 id="sticker-edit-title" class="sys-dialog-title">编辑表情包</h2>
+            <div class="sys-dialog-input-row">
+                <div class="sys-dialog-inputs-col">
+                    <input type="text" id="sticker-edit-name-input" class="sys-dialog-input" placeholder="表情包名称">
+                    <div class="sticker-url-input-wrapper">
+                        <button type="button" id="sticker-edit-local-btn" class="sticker-local-import-btn" title="导入本地图片">📁</button>
+                        <input type="text" id="sticker-edit-url-input" class="sys-dialog-input" placeholder="表情包链接">
+                    </div>
+                </div>
+                <div class="sys-dialog-preview">
+                    <img id="sticker-edit-preview-img" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="预览">
+                </div>
+            </div>
+            <textarea id="sticker-edit-description-input" class="sys-dialog-textarea" placeholder="表情包描述（用于帮助AI角色理解表情包含义）"></textarea>
+            <input type="hidden" id="sticker-edit-index" value="-1">
+            <div class="sys-dialog-buttons">
+                <button id="sticker-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="sticker-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="moments-page" class="full-page-view">
+        <div id="moments-top-bar"></div>
+        <div id="moments-content">
+            <div id="moments-header">
+                <div id="moments-header-bg"></div>
+                <div id="moments-header-info">
+                    <div class="moments-header-main">
+                        <span id="moments-ai-name">AI Name</span>
+                        <img id="moments-ai-avatar" class="profile-avatar" src="" alt="AI Avatar">
+                    </div>
+                    <span id="moments-ai-signature"></span>
+                </div>
+            </div>
+            <div id="moments-feed">
+                <div id="moments-display-pics-container-wrapper">
+                    <div id="moments-display-pics-container"></div>
+                </div>
+                <div id="moments-posts-list"></div>
+            </div>
+        </div>
+    </div>
+    <div id="moment-action-menu">
+        <button id="moment-like-btn">点赞</button>
+        <button id="moment-comment-btn">评论</button>
+        <button id="moment-edit-btn">编辑</button>
+        <button id="moment-lock-btn">锁定</button>
+    </div>
+    <div id="moment-edit-dialog" class="sys-dialog-overlay" style="z-index: 1070;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">编辑朋友圈</h2>
+            <input type="text" id="moment-edit-time-input" class="sys-dialog-input" placeholder="时间 (例如: 2小时前)">
+            <textarea id="moment-edit-text-textarea" class="sys-dialog-textarea" placeholder="正文内容"></textarea>
+            <input type="text" id="moment-edit-likes-input" class="sys-dialog-input" placeholder="点赞列表 (用中文逗号分隔)">
+            <div class="sys-dialog-buttons">
+                <button id="moment-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="delete-moment-btn" class="sys-dialog-btn sys-btn-delete">删除</button>
+                <button id="moment-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="comment-edit-dialog" class="sys-dialog-overlay" style="z-index: 1070;">
+        <div class="sys-dialog-box">
+            <h2 id="comment-edit-title" class="sys-dialog-title">编辑评论</h2>
+            <textarea id="comment-edit-textarea" class="sys-dialog-textarea"></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="comment-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="comment-edit-delete-btn" class="sys-dialog-btn sys-btn-delete">删除</button>
+                <button id="comment-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="moments-bg-dialog" class="sys-dialog-overlay" style="z-index: 1070;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">设置朋友圈背景图片</h2>
+            <label for="moments-bg-input-light" class="sys-dialog-label">浅色模式</label>
+            <div class="moments-bg-input-wrapper">
+                <button type="button" id="moments-bg-light-upload-btn" class="moments-bg-upload-btn" title="导入本地图片">📁</button>
+                <input type="text" id="moments-bg-input-light" class="sys-dialog-input" placeholder="粘贴图片链接">
+            </div>
+            <label for="moments-bg-input-dark" class="sys-dialog-label">深色模式</label>
+            <div class="moments-bg-input-wrapper">
+                <button type="button" id="moments-bg-dark-upload-btn" class="moments-bg-upload-btn" title="导入本地图片">📁</button>
+                <input type="text" id="moments-bg-input-dark" class="sys-dialog-input" placeholder="粘贴图片链接">
+            </div>
+            <div id="moments-bg-reset-btn" class="settings-menu-item sys-btn-simple" style="justify-content: center; text-align: center;">
+                <span style="margin-left: 0;">恢复默认</span>
+            </div>
+            <div class="sys-dialog-buttons">
+                <button id="moments-bg-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="moments-bg-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="moments-settings-page" class="full-page-view" style="z-index: 1060;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>朋友圈设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-moments-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div id="moments-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span>朋友圈生成提示词</span>
+            </div>
+            <div id="npc-relationships-btn" class="settings-menu-item sys-btn-simple">
+                <span>NPC关系设置</span>
+            </div>
+            <div id="moments-interaction-settings-btn" class="settings-menu-item sys-btn-simple">
+                <span>评论区互动设置</span>
+            </div>
+            <div id="moments-bg-btn" class="settings-menu-item sys-btn-simple">
+                <span>朋友圈背景图片</span>
+            </div>
+            <div id="moments-display-pics-btn" class="settings-menu-item sys-btn-simple">
+                <span>朋友圈展示图片</span>
+            </div>
+            <div id="signature-settings-btn" class="settings-menu-item sys-btn-simple">
+                <span>个性签名设置</span>
+            </div>
+            <div class="setting-row">
+                <label for="moments-capacity-input">朋友圈上限容量</label>
+                <input type="number" id="moments-capacity-input" class="sys-number-input" placeholder="50">
+            </div>
+            <div class="setting-row">
+                <label for="moments-freq-min-input">朋友圈发送频率 (分钟)</label>
+                <div class="proactive-time-inputs">
+                    <input type="number" id="moments-freq-min-input" class="sys-number-input" placeholder="最快">
+                    <span>-</span>
+                    <input type="number" id="moments-freq-max-input" class="sys-number-input" placeholder="最慢">
+                </div>
+            </div>
+            <div class="setting-row">
+                <label for="moments-quiet-start-input">朋友圈安静时段</label>
+                <div class="proactive-time-inputs">
+                    <input type="time" id="moments-quiet-start-input" class="sys-number-input" style="width: 90px;">
+                    <span>-</span>
+                    <input type="time" id="moments-quiet-end-input" class="sys-number-input" style="width: 90px;">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="signature-settings-page" class="full-page-view" style="z-index: 1065;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>个性签名设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-signature-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="settings-menu-group">
+                <div id="signature-prompt-btn" class="settings-menu-item sys-btn-simple">
+                    <span>个性签名提示词</span>
+                </div>
+            </div>
+            <div class="settings-menu-group">
+                <div class="setting-row">
+                    <label for="signature-update-rounds-input">个性签名更新轮数</label>
+                    <input type="number" id="signature-update-rounds-input" class="sys-number-input" placeholder="5">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="signature-prompt-page" class="full-page-view" style="z-index: 1070;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>个性签名提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-signature-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="signature-prompt-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="moments-display-pics-page" class="full-page-view" style="z-index: 1070;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>朋友圈展示图片</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-moments-display-pics-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="setting-row" style="padding: 10px 0; margin-bottom: 15px;">
+                <label for="moments-pics-zoomable-toggle">朋友圈图片可放大</label>
+                <label class="switch">
+                    <input type="checkbox" id="moments-pics-zoomable-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div id="add-moments-display-pic-btn" class="settings-menu-item sys-btn-simple">
+                <span>添加图片</span>
+            </div>
+            <div id="add-moments-display-pic-url-btn" class="settings-menu-item sys-btn-simple">
+                <span>从链接添加</span>
+            </div>
+            <div id="moments-display-pics-preview-container"></div>
+        </div>
+    </div>
+    <div id="image-lightbox-view" class="dialog-overlay">
+        <span id="image-lightbox-close-btn">&times;</span>
+        <img id="image-lightbox-img" src="" alt="Enlarged view">
+    </div>
+    <div id="vision-result-edit-dialog" class="sys-dialog-overlay" style="z-index: 1080;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">编辑图片识别结果</h2>
+            <textarea id="vision-result-edit-textarea" class="sys-dialog-textarea"></textarea>
+            <input type="hidden" id="vision-result-edit-message-id" value="">
+            <input type="hidden" id="vision-result-edit-image-index" value="">
+            <div class="sys-dialog-buttons">
+                <button id="vision-result-edit-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="vision-result-edit-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="moments-display-pic-url-dialog" class="sys-dialog-overlay" style="z-index: 1080;">
+        <div class="sys-dialog-box">
+            <h2 class="sys-dialog-title">从链接添加图片</h2>
+            <textarea id="moments-display-pic-url-textarea" class="sys-dialog-textarea" placeholder="请输入图片链接，多个链接用英文逗号分隔"></textarea>
+            <div class="sys-dialog-buttons">
+                <button id="moments-display-pic-url-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="moments-display-pic-url-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="moments-prompt-page" class="full-page-view" style="z-index: 1070;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>朋友圈生成提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-moments-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="moments-prompt-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="moments-reply-prompt-page" class="full-page-view" style="z-index: 1075;">
+        <div class="page-header">
+            <div class="header-actions" style="flex: 1; justify-content: flex-start;">
+                <button id="cancel-moments-reply-prompt-btn" class="action-btn">取消</button>
+            </div>
+            <h2>评论区后置提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-moments-reply-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="moments-reply-prompt-page-textarea"></textarea>
+        </div>
+    </div>
+    <div id="npc-relationships-page" class="full-page-view" style="z-index: 1070;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>NPC关系设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-npc-relationships-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <textarea id="npc-relationships-page-textarea" placeholder="请在此处定义NPC的姓名、身份、与AI的关系等。例如：&#10;- 小明：AI的大学同学，一位摄影师。&#10;- 小红：AI的邻居，喜欢烘焙。"></textarea>
+        </div>
+    </div>
+    <div id="moments-interaction-settings-page" class="full-page-view" style="z-index: 1070;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>评论区互动设置</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-moments-interaction-settings-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div id="moments-reply-prompt-btn" class="settings-menu-item sys-btn-simple">
+                <span>评论区后置提示词</span>
+            </div>
+            <div class="settings-section-header">
+                <h3 id="interaction-section-1-title">首次评论AI的朋友圈时，NPC回复你的概率</h3>
+            </div>
+            <div class="settings-menu-group">
+                <div class="setting-row">
+                    <label for="interaction-npc-reply-total-prob">NPC回复你的概率（总开关）</label>
+                    <input type="number" id="interaction-npc-reply-total-prob" class="sys-number-input" placeholder="0-100">
+                </div>
+                <div class="setting-row">
+                    <label for="interaction-npc-reply-1-prob">只有一个NPC回复你的概率</label>
+                    <input type="number" id="interaction-npc-reply-1-prob" class="sys-number-input" placeholder="0-100">
+                </div>
+                <div class="setting-row">
+                    <label for="interaction-npc-reply-2-prob">其中两个NPC回复你的概率</label>
+                    <input type="number" id="interaction-npc-reply-2-prob" class="sys-number-input" placeholder="自动计算" readonly style="background-color: var(--settings-item-hover-bg); color: var(--time-divider-color); cursor: default;">
+                </div>
+            </div>
+            <div class="setting-row" style="margin-top: 15px; margin-bottom: 5px;">
+                <label style="font-weight: 500;">可能回复你的NPC名单</label>
+            </div>
+            <div class="settings-menu-group">
+                <textarea id="interaction-npc-list" style="width: 100%; min-height: 100px; padding: 10px; border: none; background: transparent; color: var(--text-color); font-size: 16px; resize: vertical; box-sizing: border-box; outline: none;" placeholder="此处填入可能回复你的NPC名单，不要太多哦"></textarea>
+            </div>
+            <div class="settings-section-header" style="margin-top: 20px;">
+                <h3 id="interaction-section-2-title">你回复NPC时，AI回复的概率</h3>
+            </div>
+            <div class="settings-menu-group">
+                <div class="setting-row">
+                    <label id="interaction-label-ai-reply-npc" for="interaction-ai-reply-npc-prob">AI只回复NPC的概率</label>
+                    <input type="number" id="interaction-ai-reply-npc-prob" class="sys-number-input" placeholder="0-100">
+                </div>
+                <div class="setting-row">
+                    <label id="interaction-label-ai-reply-user" for="interaction-ai-reply-user-prob">AI只回复你的概率</label>
+                    <input type="number" id="interaction-ai-reply-user-prob" class="sys-number-input" placeholder="自动计算" readonly style="background-color: var(--settings-item-hover-bg); color: var(--time-divider-color); cursor: default;">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="implicit-prompt-page" class="full-page-view" style="z-index: 1020;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>隐性后置提示词</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="save-and-close-implicit-prompt-btn" class="save-btn">保存并退出</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <div class="setting-row" style="padding: 10px 0; margin-bottom: -5px;">
+                <label for="implicit-prompt-toggle">开启隐性后置提示词</label>
+                <label class="switch">
+                    <input type="checkbox" id="implicit-prompt-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <h3 style="margin-top: 0;">编辑隐性后置提示词</h3>
+            <textarea id="implicit-prompt-textarea" placeholder="在此输入隐性后置提示词"></textarea>
+        </div>
+    </div>
+    <div id="unified-model-selection-page" class="full-page-view" style="z-index: 1030;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2 id="unified-model-selection-title">选择模型</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="close-unified-model-selection-btn" class="save-btn">关闭</button>
+            </div>
+        </div>
+        <div class="page-content" style="padding: 15px 0;">
+            <div id="unified-model-selection-list"></div>
+        </div>
+    </div>
+    <div id="unified-model-config-dialog" class="sys-dialog-overlay" style="z-index: 1040;">
+        <div class="sys-dialog-box">
+            <h2 id="unified-model-config-title" class="sys-dialog-title">编辑模型</h2>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-temperature-input">温度（0～2）</label>
+                <input type="number" id="unified-model-temperature-input" class="sys-number-input" step="0.1" min="0" max="2" placeholder="必填">
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-max-tokens-input">最大 Token</label>
+                <input type="number" id="unified-model-max-tokens-input" class="sys-number-input" placeholder="选填">
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-top-p-input">Top P（0～1）</label>
+                <input type="number" id="unified-model-top-p-input" class="sys-number-input" step="0.1" min="0" max="1" placeholder="选填">
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-presence-penalty-input">存在惩罚（-2～2）</label>
+                <input type="number" id="unified-model-presence-penalty-input" class="sys-number-input" step="0.1" min="-2" max="2" placeholder="选填">
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-frequency-penalty-input">频率惩罚（-2～2）</label>
+                <input type="number" id="unified-model-frequency-penalty-input" class="sys-number-input" step="0.1" min="-2" max="2" placeholder="选填">
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-reasoning-effort-input">思考强度</label>
+                <select id="unified-model-reasoning-effort-input" class="sys-number-input" style="width: auto; min-width: 80px; text-align-last: center;">
+                    <option value="">默认</option>
+                    <option value="low">低</option>
+                    <option value="medium">中</option>
+                    <option value="high">高</option>
+                </select>
+            </div>
+            <div class="setting-row" style="padding: 4px 0;">
+                <label for="unified-model-stream-enabled-toggle">假流式输出</label>
+                <label class="switch">
+                    <input type="checkbox" id="unified-model-stream-enabled-toggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            <div class="sys-dialog-buttons">
+                <button id="unified-model-config-cancel-btn" class="sys-dialog-btn sys-btn-cancel">取消</button>
+                <button id="unified-model-config-save-btn" class="sys-dialog-btn sys-btn-save">保存</button>
+            </div>
+        </div>
+    </div>
+    <div id="model-selection-page" class="full-page-view" style="z-index: 1030;">
+        <div class="page-header">
+            <div style="flex:1;"></div>
+            <h2>选择模型</h2>
+            <div class="header-actions" style="flex:1; justify-content: flex-end;">
+                <button id="close-model-selection-btn" class="save-btn">关闭</button>
+            </div>
+        </div>
+        <div class="page-content">
+            <input type="search" id="model-search-input" placeholder="搜索模型名称 (支持多关键词)">
+            <div id="model-selection-list"></div>
+        </div>
+    </div>
+    <div id="global-comment-input-container" style="display: none;">
+        <textarea id="global-comment-input" placeholder="评论" rows="1"></textarea>
+        <button id="global-comment-send-btn">发送</button>
+    </div>
+    <script>
+    // ═══ 关键图片预加载（在主 JS 加载前开始读取 IndexedDB）═══
+    // 预加载 2 个头像 + 2 个聊天背景图，创建 Blob URL 并预解码
+    // 这样当主 JS 执行时，这些图片数据很可能已经就绪
+    window.__preloadedImages = (async () => {
+        try {
+            const DB_NAME = 'AIChat_DataStore';
+            const DB_VERSION = 5;
+            
+            const db = await new Promise((resolve, reject) => {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+                req.onupgradeneeded = (e) => {
+                    // 不在预加载脚本中创建/修改 schema
+                    // 如果版本不匹配，放弃预加载，让主 JS 处理
+                    e.target.transaction.abort();
+                };
+            });
+            
+            const result = { userAvatar: '', aiAvatar: '', chatBgLight: '', chatBgDark: '' };
+            
+            // 辅助函数：从指定 store 读取单条记录
+            const readOne = (storeName, key) => new Promise(resolve => {
+                try {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const req = tx.objectStore(storeName).get(key);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => resolve(null);
+                } catch(e) { resolve(null); }
+            });
+            
+            // 并行读取 4 个关键图片（2 头像 + 2 聊天背景）
+            const [userAvatar, aiAvatar, bgLight, bgDark] = await Promise.all([
+                readOne('avatarImages', 'user_avatar'),
+                readOne('avatarImages', 'ai_avatar'),
+                readOne('chatBgImages', 'chat_bg_light'),
+                readOne('chatBgImages', 'chat_bg_dark')
+            ]);
+            
+            // 创建 Blob URL
+            if (userAvatar && userAvatar.blob instanceof Blob)
+                result.userAvatar = URL.createObjectURL(userAvatar.blob);
+            if (aiAvatar && aiAvatar.blob instanceof Blob)
+                result.aiAvatar = URL.createObjectURL(aiAvatar.blob);
+            if (bgLight && bgLight.blob instanceof Blob)
+                result.chatBgLight = URL.createObjectURL(bgLight.blob);
+            if (bgDark && bgDark.blob instanceof Blob)
+                result.chatBgDark = URL.createObjectURL(bgDark.blob);
+            
+            // 预解码所有已加载的图片（让浏览器提前准备好位图）
+            const decodes = Object.values(result)
+                .filter(url => url)
+                .map(url => {
+                    const img = new Image();
+                    img.src = url;
+                    return img.decode().catch(() => {});
+                });
+            await Promise.all(decodes);
+            
+            db.close();
+            return result;
+        } catch(e) {
+            console.warn('Image preload failed:', e);
+            return { userAvatar: '', aiAvatar: '', chatBgLight: '', chatBgDark: '' };
+        }
+    })();
+    </script>
+    <script type="module" src="js/modules/consoleLog.js"></script>
+    <script type="module" src="js/modules/theme.js"></script>
+    <script type="module">
+        async function loadAppWithServiceWorkerCacheName() {
+            let cacheName = `runtime-${Date.now()}`;
+            try {
+                const response = await fetch('sw.js', { cache: 'no-store' });
+                if (response.ok) {
+                    const swText = await response.text();
+                    const match = swText.match(/const\s+CACHE_NAME\s*=\s*['"]([^'"]+)['"]/);
+                    if (match && match[1]) {
+                        cacheName = match[1];
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to read Service Worker cache name for app versioning:', error);
+            }
+
+            window.__AI_CHAT_CACHE_NAME__ = cacheName;
+            await import(`./js/app.js?v=${encodeURIComponent(cacheName)}`);
+        }
+
+        loadAppWithServiceWorkerCacheName().catch(error => {
+            console.error('Failed to load app module:', error);
+        });
+    </script>
+</body>
+
+</html>

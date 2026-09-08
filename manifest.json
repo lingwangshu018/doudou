@@ -1,0 +1,13 @@
+{
+    "name": "✉",
+    "short_name": "✉",
+    "description": "一个注重隐私、数据完全由自己掌控的 AI 角色扮演网页。禁止二传二改！",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#FFFFFF",
+    "theme_color": "#FFFFFF",
+    "icons": [],
+    "categories": ["entertainment", "social"],
+    "orientation": "any",
+    "scope": "/"
+}
